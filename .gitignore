@@ -1,0 +1,5 @@
+*.bat
+img
+*.png
+*.bmp
+stb_image.h
