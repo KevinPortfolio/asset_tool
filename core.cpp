@@ -12,6 +12,7 @@ typedef double float64;
 
 #include <iostream>
 #include "bmp.cpp"
+#include "png.cpp"
 
 using namespace std;
 
