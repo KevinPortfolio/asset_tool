@@ -1,10 +1,22 @@
-#include "png.h"
 
 //NOTE: Known static PNG names.
 #define SIGNATURE 727905341920923785
 #define IHDR 1229472850
 #define IEND 1229278788
 #define IDAT 1229209940
+
+struct PNGProperties
+{
+  uint32 width;
+  uint32 height;
+  uint32 width_in_bytes;
+  uint32 bytes_per_pixel;
+  unsigned char bit_depth;
+  unsigned char color_type;
+  unsigned char compression_method;
+  unsigned char filter_method;
+  unsigned char interlace_method;
+};
 
 struct DeflateBlock
 {
@@ -17,49 +29,40 @@ struct DeflateBlock
 };
 
 static inline int32
-png_math_abs_val(int32 value)
-{
-  return((value < 0) ? -value: value);
-}
+png_math_abs_val(int32 value) {  return((value < 0) ? -value: value); }
+
+static inline int32
+png_math_floor(float value){ return (int32)value; }
 
 static int32
 paeth_predictor(int32 previous, int32 above, int32 above_prev)
 {
   int32 p = previous + above - above_prev;
-  int32 pa = png_math_abs_val(p - Previous);
-  int32 pb = png_math_abs_val(p - Above);
-  int32 pc = png_math_abs_val(p - AbovePrev);
+  int32 pa = png_math_abs_val(p - previous);
+  int32 pb = png_math_abs_val(p - above);
+  int32 pc = png_math_abs_val(p - above_prev);
 
   if ((pa <= pb) && (pa <= pc))
-  {
     return previous;
-  }
   else if (pb <= pc)
-  {
     return above;
-  }
   else
-  {
     return above_prev;
-  }
 }
 
 static inline void
-no_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data,
-	  DeflateBlock* block_state)
+no_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data, DeflateBlock* block_state)
 {
-  image_data[*image_index++] = data[*index];
+  image_data[*image_index] = data[*index];
   *image_index = *image_index + 1;
 }
 
 static void 
-sub_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data,
-	  DeflateBlock* block_state) 
+sub_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data, DeflateBlock* block_state) 
 {
-  if (block_state->ScanLinePos > 2)
+  if (block_state->scan_line_pos > 2)
   {
-    image_data[*image_index] = data[*index] +
-      image_data[*image_index - block_state->bytes_per_pixel];
+    image_data[*image_index] = data[*index] + image_data[*image_index - block_state->bytes_per_pixel];
     *image_index = *image_index + 1;
     
   }
@@ -74,11 +77,9 @@ static void
 up_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data,
 	 DeflateBlock* block_state) 
 {
-  if (*index > (block_state->end_index_pos - block_state->length +
-		block_state->scan_line_width))
+  if (*index > (block_state->end_index_pos - block_state->length + block_state->scan_line_width))
   {
-    image_data[*image_index] = data[*index] + image_data[*image_index -
-			      block_state->scan_line_width];
+    image_data[*image_index] = data[*index] + image_data[*image_index - block_state->scan_line_width];
     *image_index = *image_index + 1;
     
   }
@@ -91,17 +92,15 @@ up_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data,
 }
 
 static void 
-average_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data,
-	       DeflateBlock* block_state)
+average_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data, DeflateBlock* block_state)
 {
   
-  if (*index > (block_state->end_index_pos - block_state->length +
-		block_state->scan_line_width))
+  if (*index > (block_state->end_index_pos - block_state->length + block_state->scan_line_width))
   {
     if (block_state->scan_line_pos > 2)
     {
       image_data[*image_index] = data[*index] +
-	(int)Math_Floor((image_data[*image_index - block_state->bytes_per_pixel] +
+        png_math_floor((image_data[*image_index - block_state->bytes_per_pixel] +
 			 image_data[*image_index - block_state->scan_line_width]) * 0.5f);
       *image_index = *image_index + 1;
       
@@ -109,7 +108,7 @@ average_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_dat
     else
     {
       image_data[*image_index] = data[*index] +
-	(int)Math_Floor(image_data[*image_index - block_state->scan_line_width] * 0.5f);
+	png_math_floor(image_data[*image_index - block_state->scan_line_width] * 0.5f);
       *image_index = *image_index + 1;
     }
   }
@@ -118,7 +117,7 @@ average_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_dat
     if (block_state->scan_line_pos > 2)
     {
       image_data[*image_index] = data[*index] + 0.5f *
-	(int)Math_Floor((image_data[*image_index - block_state->bytes_per_pixel] + 0));
+        png_math_floor((image_data[*image_index - block_state->bytes_per_pixel] + 0));
       *image_index = *image_index + 1;
       
     }
@@ -131,11 +130,9 @@ average_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_dat
 }
 
 static void
-paeth_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data,
-	     DeflateBlock* block_state)
+paeth_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data, DeflateBlock* block_state)
 {
-  if (*index > (block_state->end_index_pos - block_state->length +
-		block_state->scan_line_width))
+  if (*index > (block_state->end_index_pos - block_state->length + block_state->scan_line_width))
   {
     if (block_state->scan_line_pos > 2)
     {
@@ -172,10 +169,9 @@ paeth_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data,
 }
 
 void
-png_extract(byte* data, byte** texture_data, uint32* width, uint32* height,
-	    uint8* bytes_per_pixel)
+png_extract(byte* data, byte** texture_data, uint32* width, uint32* height, uint8* bytes_per_pixel)
 {
-  if (!data || !texture_Data || !width || !height || !bytes_per_pixel)
+  if (!data || !texture_data || !width || !height || !bytes_per_pixel)
   {
     // ERROR: Invalid inputs
     // TODO: Change function parameters to avoid this check.
@@ -192,8 +188,7 @@ png_extract(byte* data, byte** texture_data, uint32* width, uint32* height,
   int32 chunk_name = data[15] | (data[14] << 8) | (data[13] << 16) | (data[12] << 24);
   
   if (chunk_name == IHDR)
-  {
-    
+  {    
   /* IHDR header chunk
     width:              4 bytes
     height:             4 bytes
@@ -224,11 +219,8 @@ png_extract(byte* data, byte** texture_data, uint32* width, uint32* height,
   
   if (*width && *height)
   {
-    image_data = 0;
-    image_data = Memory_Allocate(image_data, properties.width_in_bytes *
-				properties.height);
-    *texture_data = new unsigned char[properties.width_in_bytes * *height];
-
+    //image_data = Memory_Allocate(image_data, properties.width_in_bytes * properties.height);
+    *texture_data = new byte[properties.width_in_bytes * *height];
   }
   else
   {
@@ -250,20 +242,15 @@ png_extract(byte* data, byte** texture_data, uint32* width, uint32* height,
     data_index += 8;
     
     if (chunk_name == IEND)
-    {
       end_extraction = true;
-    }
     else
     {
       if (chunk_name == IDAT)
       {
 	//NOTE: ZLib Deflate/Inflate Compression information.
 	//TODO: Handle more options from just 78 01 (like 78 9C or 78 DA).
-	uint8 compression_method = data[data_index];
-	data_index++;
-	
-	uint8 additional_flags = data[data_index];
-	data_index++;
+	uint8 compression_method = data[data_index++];
+	uint8 additional_flags = data[data_index++];
 	
 	//TODO: Handle the possibility of a DICTID?
 	
@@ -286,15 +273,16 @@ png_extract(byte* data, byte** texture_data, uint32* width, uint32* height,
 	    10 - Compressed block with the Huffman table supplied.
 	    11 - Reserved.
 	  */
-	  uint8 block_header = data[data_index];
-	  data_index++;
-	  
+	  uint8 block_header = data[data_index++];
+
+	  uint16 block_length;
+	  uint16 block_length_ones_complement;
 	  if ((block_header << 7) == 0x00)
 	  {
-	    uint16 block_length = (data[data_index]) | (data[data_index + 1] << 8);
+	    block_length = (data[data_index]) | (data[data_index + 1] << 8);
 	    data_index += 2;
 	    
-	    uint16 block_length_ones_complement = (data[data_index]) |
+	    block_length_ones_complement = (data[data_index]) |
 	      (data[data_index + 1] << 8);
 	    data_index += 2;
 	    
@@ -309,29 +297,24 @@ png_extract(byte* data, byte** texture_data, uint32* width, uint32* height,
 		{
 		case 0:
 		  {
-		    no_filter(&data_index, data, &extracted_data_index, *texture_data,
-			      &block_state);
+		    no_filter(&data_index, data, &extracted_data_index, *texture_data, &block_state);
 		    
 		  } break;
 		case 1:
 		  {
-		    sub_filter(&data_index, data, &extracted_data_index, *texture_data,
-			       &block_state);
+		    sub_filter(&data_index, data, &extracted_data_index, *texture_data, &block_state);
 		  } break;
 		case 2:
 		  {
-		    up_filter(&data_index, data, &extracted_data_index, *texture_data,
-			      &block_state);
+		    up_filter(&data_index, data, &extracted_data_index, *texture_data, &block_state);
 		  } break;
 		case 3:
 		  {
-		    average_filter(&data_index, data, &extracted_data_index, *texture_data,
-				   &block_state);
+		    average_filter(&data_index, data, &extracted_data_index, *texture_data, &block_state);
 		  } break;
 		case 4:
 		  {
-		    paeth_filter(&data_index, data, &extracted_data_index, *texture_data,
-				 &block_state);
+		    paeth_filter(&data_index, data, &extracted_data_index, *texture_data, &block_state);
 
 		  } break;
 		default:
@@ -352,11 +335,10 @@ png_extract(byte* data, byte** texture_data, uint32* width, uint32* height,
 	  }
 	  else if ((block_header << 7) == 0x80)
 	  {
-	    int16 block_length = (data[data_index]) | (data[data_index + 1] << 8);
+	    block_length = (data[data_index]) | (data[data_index + 1] << 8);
 	    data_index += 2;
 	    
-	    int16 block_length_ones_complement = (data[data_index]) |
-	      (data[data_index + 1] << 8);
+	    block_length_ones_complement = (data[data_index]) | (data[data_index + 1] << 8);
 	    data_index += 2;
 	  }
 	}
