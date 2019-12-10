@@ -168,10 +168,21 @@ paeth_filter(uint32* index, uint8* data, uint32* image_index, uint8* image_data,
   }
 }
 
-void
-png_extract(byte* data, byte** texture_data, uint32* width, uint32* height, uint8* bytes_per_pixel)
+struct png_file // SIZE: 24 bytes
 {
-  if (!data || !texture_data || !width || !height || !bytes_per_pixel)
+  byte* data;
+  uint32 width;
+  uint32 height;
+  int32 padding0;
+  uint8 bytes_per_pixel;
+  uint8 padding1, padding2, padding3;
+};
+
+byte*
+png_extract(byte* data, uint32* width, uint32* height, uint8* bytes_per_pixel)
+{
+  byte* result = 0;
+  if (!data || !width || !height || !bytes_per_pixel)
   {
     // ERROR: Invalid inputs
     // TODO: Change function parameters to avoid this check.
@@ -220,7 +231,7 @@ png_extract(byte* data, byte** texture_data, uint32* width, uint32* height, uint
   if (*width && *height)
   {
     //image_data = Memory_Allocate(image_data, properties.width_in_bytes * properties.height);
-    *texture_data = new byte[properties.width_in_bytes * *height];
+    result = new byte[properties.width_in_bytes * *height];
   }
   else
   {
@@ -297,24 +308,25 @@ png_extract(byte* data, byte** texture_data, uint32* width, uint32* height, uint
 		{
 		case 0:
 		  {
-		    no_filter(&data_index, data, &extracted_data_index, *texture_data, &block_state);
+		    // NOTE: data_index, data, extracted_data_index?, texture_Data
+		    no_filter(&data_index, data, &extracted_data_index, result, &block_state);
 		    
 		  } break;
 		case 1:
 		  {
-		    sub_filter(&data_index, data, &extracted_data_index, *texture_data, &block_state);
+		    sub_filter(&data_index, data, &extracted_data_index, result, &block_state);
 		  } break;
 		case 2:
 		  {
-		    up_filter(&data_index, data, &extracted_data_index, *texture_data, &block_state);
+		    up_filter(&data_index, data, &extracted_data_index, result, &block_state);
 		  } break;
 		case 3:
 		  {
-		    average_filter(&data_index, data, &extracted_data_index, *texture_data, &block_state);
+		    average_filter(&data_index, data, &extracted_data_index, result, &block_state);
 		  } break;
 		case 4:
 		  {
-		    paeth_filter(&data_index, data, &extracted_data_index, *texture_data, &block_state);
+		    paeth_filter(&data_index, data, &extracted_data_index, result, &block_state);
 
 		  } break;
 		default:
@@ -362,4 +374,6 @@ png_extract(byte* data, byte** texture_data, uint32* width, uint32* height, uint
       data_index += 4;
     }
   }
+
+  return result;
 }

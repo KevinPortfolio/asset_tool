@@ -9,10 +9,26 @@
   - Gap1 (optional)
   - Pixel array:
     Must begin at an address that is a multiple of 4 bytes.
+    Every row must end on an address that is a multiple of 4 bytes, padding if needed.
   - Gap2 (optional)
   - ICC Color Profile (optional)
 
  */
+
+struct bmp_info
+{
+  uint32 header_size;
+  uint32 bitmap_width;
+  uint32 bitmap_height;
+  int16 color_plane_count;
+  int16 bits_per_pixel;
+  int32 compression_method;
+  int32 image_size;
+  int32 horizontal_resolution;
+  int32 vertical_resolution;
+  int32 palette_color_count;
+  int32 important_color_count;
+};
 
 struct bmp_file
 {
@@ -42,15 +58,28 @@ bmp_extract(byte* data_input)
       (data_input[20] << 16) | (data_input[21] << 24);
     result.height = (data_input[22]) | (data_input[23] << 8) |
       (data_input[24] << 16) | (data_input[25] << 24);
+
+    if ((data_input[26] | data_input[27] << 8) != 1)
+    {
+      // NOTE: This is an error, however, should be handled with care
+      //       if all other fields are correct. 
+    }
     
     uint16 bits_per_pixel = (data_input[28]) | (data_input[29] << 8);
-    result.bytes_per_pixel = bits_per_pixel / 8;
+    result.bytes_per_pixel = bits_per_pixel / 8; // NOTE: Check for valid values.
     
     uint32 compression_method = (data_input[30]) | (data_input[31] << 8) |
       (data_input[32] << 16) | (data_input[33] << 24);
+
+    /*
+      0 - BI_RGB, none (most common)
+      1 - BI_RLE8 run length encoding 8-bit/pixel
+      2 - BI_RLE4 run length encoding 4-bit/pixel
+      3 - BI_BITFIELDS
+     */
     
     uint32 image_size = (data_input[34]) | (data_input[35] << 8) | (data_input[36] << 16) |
-      (data_input[37] << 24);
+      (data_input[37] << 24);// NOTE: Dummy 0 can be given for BI_RGB
 
     // NOTE: Why is bits per pixel here?
     uint32 bytes_per_row = ((bits_per_pixel * result.width + 31) / 32) * 4;
@@ -71,11 +100,15 @@ bmp_extract(byte* data_input)
     }
     
     uint32 horizontal_resolution  = (data_input[38]) | (data_input[39] << 8) |
-      (data_input[40] << 16) | (data_input[41] << 24);
+      (data_input[40] << 16) | (data_input[41] << 24); // NOTE: Pixel per metre
     uint32 vertical_resolution = (data_input[42]) | (data_input[43] << 8) |
       (data_input[44] << 16) | (data_input[45] << 24);
+
+    // NOTE: Zero means default to 2^n
     uint32 colors_in_pallet_count = (data_input[46]) | (data_input[47] << 8) |
       (data_input[48] << 16) | (data_input[49] << 24);
+
+    // NOTE: Zero means every color is important.
     uint32 important_colors_count = (data_input[50]) | (data_input[51] << 8) |
       (data_input[52] << 16) | (data_input[53] << 24);
     
@@ -162,4 +195,12 @@ bmp_extract(byte* data_input)
       // TODO: Error
     }
   }
+}
+
+bmp_info
+bmp_get_info(byte* bitmap_data)
+{
+  bmp_info result = {};
+
+  return result;
 }
